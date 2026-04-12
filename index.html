@@ -344,8 +344,11 @@ function initFirebase(cfg) {
     db.ref('grid/tasks').on('value', snap => {
       const val = snap.val();
       tasks = Array.isArray(val) ? val : [];
-      // days配列の保証
-      tasks.forEach(t => { if (!Array.isArray(t.days)) t.days = []; });
+      // days配列・origIdx保証（Firebaseはnullを保存しないため）
+      tasks.forEach(t => {
+        if (!Array.isArray(t.days)) t.days = [];
+        if (t.origIdx === undefined || t.origIdx === null) t.origIdx = -1;
+      });
       render();
     });
     db.ref('grid/done').on('value', snap => {
@@ -390,7 +393,7 @@ function addTask() {
     color: 'none',
     days: [],
     createdAt: new Date().toISOString(),
-    origIdx: null
+    origIdx: -1
   };
   tasks.unshift(t);
   quickInput.value = '';
@@ -622,7 +625,7 @@ function restorePos(ci) {
   if (ci < 0 || ci >= done.length) return;
   const t = done.splice(ci, 1)[0];
   delete t.completedAt;
-  const pos = (typeof t.origIdx === 'number' && t.origIdx <= tasks.length) ? t.origIdx : tasks.length;
+  const pos = (typeof t.origIdx === 'number' && t.origIdx >= 0 && t.origIdx <= tasks.length) ? t.origIdx : tasks.length;
   tasks.splice(pos, 0, t);
   save();
   render();
