@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRID</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Kaisei+Decol&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== Firebase設定画面 (I-9) ===== -->
+<div id="setupScreen" class="setup-screen">
+  <div class="setup-box">
+    <div class="setup-title">GRID</div>
+    <div class="setup-subtitle">FIREBASE CONFIGURATION</div>
+    <div class="setup-hint">
+      Firebase Realtime Database の接続情報を入力してください。<br>
+      Firebase Console → プロジェクト設定 → マイアプリ から取得できます。
+    </div>
+    <div id="setupStatus" class="setup-status"></div>
+    <div class="fl">
+      <label>API KEY</label>
+      <input id="cfgApiKey" class="fi" type="text" placeholder="AIzaSy...">
+    </div>
+    <div class="fl">
+      <label>DATABASE URL</label>
+      <input id="cfgDbUrl" class="fi" type="text" placeholder="https://your-project.firebaseio.com">
+    </div>
+    <div class="fl">
+      <label>PROJECT ID</label>
+      <input id="cfgProjectId" class="fi" type="text" placeholder="your-project-id">
+    </div>
+    <div class="fl">
+      <label>APP ID</label>
+      <input id="cfgAppId" class="fi" type="text" placeholder="1:123456:web:abcdef">
+    </div>
+    <div class="setup-acts">
+      <button id="btnTest" class="btn-test" disabled>TEST CONNECTION</button>
+      <button id="btnSaveConfig" class="btn-save-config" disabled>SAVE</button>
+    </div>
+    <span id="setupReset" class="setup-reset" style="display:none;">設定をリセット</span>
+  </div>
+</div>
+
+<!-- ===== メイン画面 ===== -->
+<div id="mainApp" style="display:none; height:100%; display:none; flex-direction:column;">
+
+<!-- ヘッダー -->
+<header>
+  <div class="logo">GRID <span>v1.3</span></div>
+  <button id="btnDone" class="hbtn">DONE</button>
+</header>
+
+<!-- タスク追加バー -->
+<div class="addbar">
+  <input id="quickInput" class="add-main-input" type="text" placeholder="新しいタスクを追加...">
+  <button id="btnAdd" class="add-btn-main">ADD</button>
+</div>
+
+<!-- ナビバー -->
+<div class="nav-bar">
+  <div class="nav-left">
+    <span class="pane-title">TASKS</span>
+    <span id="taskCount" class="task-count">0件</span>
+  </div>
+  <div class="nav-right">
+    <button id="calPrev" class="cal-nav-btn">◀</button>
+    <button id="calToday" class="cal-today-btn">TODAY</button>
+    <button id="calNext" class="cal-nav-btn">▶</button>
+    <span id="calRange" class="cal-range"></span>
+  </div>
+</div>
+
+<!-- メインレイアウト -->
+<div class="main-layout">
+  <!-- タスクペイン -->
+  <div class="task-pane">
+    <div class="date-head-spacer"></div>
+    <div id="taskList" class="task-list-scroll"></div>
+  </div>
+  <!-- カレンダーペイン -->
+  <div class="calendar-pane">
+    <div class="date-head-wrapper">
+      <div id="dateHead" class="date-head-inner"></div>
+    </div>
+    <div id="calScroll" class="cal-scroll">
+      <div id="calInner" class="cal-inner"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /mainApp -->
+
+<!-- ===== 完了パネル (O-3) ===== -->
+<div id="cpPanel" class="cp-panel">
+  <div class="cp-head">
+    <span class="cp-title">COMPLETED</span>
+    <button id="cpClose" class="cp-close">✕</button>
+  </div>
+  <div id="cpList" class="cp-list"></div>
+</div>
+
+<!-- ===== 編集モーダル (I-2) ===== -->
+<div id="editBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-title">タスク編集</div>
+    <div class="fl">
+      <label>TASK NAME</label>
+      <input id="eName" class="fi" type="text">
+    </div>
+    <div class="fl">
+      <label>NEXT ACTION</label>
+      <input id="eAction" class="fi" type="text" placeholder="具体的な動詞から記述...">
+    </div>
+    <div class="fl">
+      <label>DEADLINE</label>
+      <input id="eDeadline" class="fi" type="date">
+    </div>
+    <div class="fl">
+      <label>COLOR</label>
+      <div class="color-row">
+        <div class="co c-red" data-c="red">緊急</div>
+        <div class="co c-blue" data-c="blue">集中</div>
+        <div class="co c-yellow" data-c="yellow">定型</div>
+        <div class="co c-none" data-c="none">なし</div>
+      </div>
+    </div>
+    <div class="modal-acts">
+      <button id="btnEditComplete" class="btn-complete">COMPLETE</button>
+      <button id="btnEditSave" class="btn-ok">SAVE</button>
+      <button id="btnEditDelete" class="btn-delete">DELETE</button>
+      <button id="btnEditCancel" class="btn-cancel">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 確認ダイアログ ===== -->
+<div id="confBg" class="conf-bg">
+  <div class="conf-box">
+    <div id="confTitle" class="conf-title"></div>
+    <div id="confMsg" class="conf-msg"></div>
+    <div id="confActs" class="conf-acts"></div>
+  </div>
+</div>
+
+<!-- ===== トースト ===== -->
+<div id="toast" class="toast"></div>
+
+<!-- ===== Firebase SDK ===== -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+<script>
+/* ===== 定数 ===== */
+const CAL_DAYS = 90;
+const LS_KEY = 'grid_firebase_config';
+const JP_HOLIDAYS = (() => {
+  // 日本の祝日（簡易版：固定祝日のみ）
+  const y = new Date().getFullYear();
+  const h = [
+    `${y}-01-01`,`${y}-01-13`,`${y}-02-11`,`${y}-02-23`,
+    `${y}-03-20`,`${y}-04-29`,`${y}-05-03`,`${y}-05-04`,`${y}-05-05`,
+    `${y}-07-21`,`${y}-08-11`,`${y}-09-15`,`${y}-09-23`,
+    `${y}-10-13`,`${y}-11-03`,`${y}-11-23`,`${y}-11-24`
+  ];
+  const ny = y + 1;
+  h.push(`${ny}-01-01`,`${ny}-01-13`,`${ny}-02-11`,`${ny}-02-23`,
+    `${ny}-03-20`,`${ny}-04-29`,`${ny}-05-03`,`${ny}-05-04`,`${ny}-05-05`,
+    `${ny}-07-21`,`${ny}-08-11`,`${ny}-09-15`,`${ny}-09-23`,
+    `${ny}-10-13`,`${ny}-11-03`,`${ny}-11-23`,`${ny}-11-24`);
+  return new Set(h);
+})();
+
+/* ===== 状態 ===== */
+let tasks = [];
+let done = [];
+let db = null;
+let calOff = 0;
+let editId = null;
+let editCol = 'none';
+let dragSrcIdx = null;
+
+/* ===== DOM参照 ===== */
+const $ = id => document.getElementById(id);
+const setupScreen = $('setupScreen');
+const mainApp = $('mainApp');
+const quickInput = $('quickInput');
+const taskList = $('taskList');
+const dateHead = $('dateHead');
+const calInner = $('calInner');
+const calScroll = $('calScroll');
+const taskCount = $('taskCount');
+const calRange = $('calRange');
+const cpPanel = $('cpPanel');
+const cpList = $('cpList');
+const editBg = $('editBg');
+const confBg = $('confBg');
+const toastEl = $('toast');
+
+/* ===== ユーティリティ ===== */
+function ds(d) { return d.toISOString().slice(0, 10); }
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+function flashError(el, ms = 1200) {
+  el.style.borderColor = 'var(--red)';
+  setTimeout(() => el.style.borderColor = '', ms);
+}
+
+/* ===== I-9: Firebase設定物語 ===== */
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function validateConfig(cfg) {
+  if (!cfg) return false;
+  if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId) return false;
+  if (!cfg.databaseURL.startsWith('https://')) return false;
+  return true;
+}
+
+function initSetup() {
+  const cfg = loadConfig();
+  if (cfg && validateConfig(cfg)) {
+    // 設定あり・照合②適合 → メイン画面表示
+    initFirebase(cfg);
+    return;
+  }
+  // 設定なし → 設定画面表示
+  setupScreen.classList.remove('hidden');
+  mainApp.style.display = 'none';
+  if (cfg) {
+    // 設定はあるが不正
+    $('cfgApiKey').value = cfg.apiKey || '';
+    $('cfgDbUrl').value = cfg.databaseURL || '';
+    $('cfgProjectId').value = cfg.projectId || '';
+    $('cfgAppId').value = cfg.appId || '';
+    $('setupReset').style.display = '';
+  }
+}
+
+// 入力変更時にテストボタン活性制御
+['cfgApiKey','cfgDbUrl','cfgProjectId','cfgAppId'].forEach(id => {
+  $(id).addEventListener('input', () => {
+    const ok = $('cfgApiKey').value.trim() && $('cfgDbUrl').value.trim()
+      && $('cfgProjectId').value.trim() && $('cfgAppId').value.trim()
+      && $('cfgDbUrl').value.trim().startsWith('https://');
+    $('btnTest').disabled = !ok;
+    $('btnSaveConfig').disabled = true;
+    $('setupStatus').className = 'setup-status';
+    $('setupStatus').textContent = '';
+  });
+});
+
+// 接続テスト
+$('btnTest').addEventListener('click', async () => {
+  const cfg = {
+    apiKey: $('cfgApiKey').value.trim(),
+    databaseURL: $('cfgDbUrl').value.trim(),
+    projectId: $('cfgProjectId').value.trim(),
+    appId: $('cfgAppId').value.trim()
+  };
+  if (!validateConfig(cfg)) return;
+
+  $('btnTest').disabled = true;
+  $('setupStatus').className = 'setup-status';
+  $('setupStatus').textContent = 'テスト中...';
+  $('setupStatus').style.display = 'block';
+
+  try {
+    // 既存のappがあれば削除
+    if (firebase.apps.length) await firebase.app().delete();
+    const app = firebase.initializeApp(cfg);
+    const testDb = firebase.database(app);
+    // 接続テスト: grid/ にアクセス
+    await testDb.ref('grid').once('value');
+    $('setupStatus').className = 'setup-status success';
+    $('setupStatus').textContent = '接続成功';
+    $('btnSaveConfig').disabled = false;
+  } catch (e) {
+    $('setupStatus').className = 'setup-status error';
+    $('setupStatus').textContent = 'エラー: ' + e.message;
+    $('btnSaveConfig').disabled = true;
+  } finally {
+    $('btnTest').disabled = false;
+  }
+});
+
+// 保存
+$('btnSaveConfig').addEventListener('click', () => {
+  const cfg = {
+    apiKey: $('cfgApiKey').value.trim(),
+    databaseURL: $('cfgDbUrl').value.trim(),
+    projectId: $('cfgProjectId').value.trim(),
+    appId: $('cfgAppId').value.trim()
+  };
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  initFirebase(cfg);
+});
+
+// リセット
+$('setupReset').addEventListener('click', () => {
+  localStorage.removeItem(LS_KEY);
+  $('cfgApiKey').value = '';
+  $('cfgDbUrl').value = '';
+  $('cfgProjectId').value = '';
+  $('cfgAppId').value = '';
+  $('btnTest').disabled = true;
+  $('btnSaveConfig').disabled = true;
+  $('setupStatus').className = 'setup-status';
+  $('setupStatus').textContent = '';
+  $('setupReset').style.display = 'none';
+});
+
+/* ===== P-1: Firebase同期物語 ===== */
+function initFirebase(cfg) {
+  try {
+    if (firebase.apps.length) {
+      // 既に初期化済みならそのまま使う
+    } else {
+      firebase.initializeApp(cfg);
+    }
+    db = firebase.database();
+
+    // リアルタイム監視
+    db.ref('grid/tasks').on('value', snap => {
+      const val = snap.val();
+      tasks = Array.isArray(val) ? val : [];
+      // days配列の保証
+      tasks.forEach(t => { if (!Array.isArray(t.days)) t.days = []; });
+      render();
+    });
+    db.ref('grid/done').on('value', snap => {
+      const val = snap.val();
+      done = Array.isArray(val) ? val : [];
+      if (cpPanel.classList.contains('open')) renderCP();
+    });
+
+    // メイン画面表示
+    setupScreen.classList.add('hidden');
+    mainApp.style.display = 'flex';
+    $('setupReset').style.display = '';
+  } catch (e) {
+    console.error('Firebase init error:', e);
+    setupScreen.classList.remove('hidden');
+    mainApp.style.display = 'none';
+    $('setupStatus').className = 'setup-status error';
+    $('setupStatus').textContent = 'Firebase初期化エラー: ' + e.message;
+    $('setupStatus').style.display = 'block';
+  }
+}
+
+function save() {
+  if (!db) return;
+  db.ref('grid/tasks').set(tasks);
+  db.ref('grid/done').set(done);
+}
+
+/* ===== I-1: タスク追加物語 ===== */
+function addTask() {
+  if (!db) return;
+  const name = quickInput.value.trim();
+  if (!name) {
+    flashError(quickInput);
+    return;
+  }
+  const t = {
+    id: Date.now(),
+    name,
+    action: '',
+    deadline: '',
+    color: 'none',
+    days: [],
+    createdAt: new Date().toISOString(),
+    origIdx: null
+  };
+  tasks.unshift(t);
+  quickInput.value = '';
+  save();
+  render();
+  showToast('追加しました');
+}
+
+$('btnAdd').addEventListener('click', addTask);
+quickInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+
+/* ===== I-2: タスク編集物語 ===== */
+function openEdit(id) {
+  const idx = tasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  editId = id;
+  const t = tasks[idx];
+  $('eName').value = t.name;
+  $('eAction').value = t.action || '';
+  $('eDeadline').value = t.deadline || '';
+  editCol = t.color || 'none';
+  updateColorSel();
+  editBg.classList.add('open');
+}
+
+function updateColorSel() {
+  document.querySelectorAll('.co').forEach(el => {
+    el.classList.toggle('sel', el.dataset.c === editCol);
+  });
+}
+
+document.querySelectorAll('.co').forEach(el => {
+  el.addEventListener('click', () => {
+    editCol = el.dataset.c;
+    updateColorSel();
+  });
+});
+
+function saveEdit() {
+  const idx = tasks.findIndex(t => t.id === editId);
+  if (idx < 0) { editBg.classList.remove('open'); return; }
+  const name = $('eName').value.trim();
+  if (!name) { flashError($('eName')); return; }
+  const validColors = ['red','blue','yellow','none'];
+  if (!validColors.includes(editCol)) return;
+  tasks[idx].name = name;
+  tasks[idx].action = $('eAction').value.trim();
+  tasks[idx].deadline = $('eDeadline').value;
+  tasks[idx].color = editCol;
+  editBg.classList.remove('open');
+  save();
+  render();
+  showToast('保存しました');
+}
+
+$('btnEditSave').addEventListener('click', saveEdit);
+$('btnEditCancel').addEventListener('click', () => editBg.classList.remove('open'));
+
+/* ===== I-3: タスク完了物語 ===== */
+function completeTask(id) {
+  const idx = tasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  const t = tasks[idx];
+  if (!t.action || !t.action.trim()) {
+    showConfirm('Next Action未入力', 'Next Actionが未入力です。このまま完了しますか？', [
+      { label: 'このまま完了', cls: 'btn-complete', fn: () => { closeConfirm(); doComplete(idx); } },
+      { label: 'Actionを入力', cls: 'btn-ok', fn: () => { closeConfirm(); openEdit(id); } }
+    ]);
+    return;
+  }
+  doComplete(idx);
+}
+
+function doComplete(idx) {
+  if (idx < 0 || idx >= tasks.length) return;
+  const t = tasks[idx];
+  t.completedAt = new Date().toISOString();
+  t.origIdx = idx;
+  done.unshift(t);
+  tasks.splice(idx, 1);
+  save();
+  render();
+  if (cpPanel.classList.contains('open')) renderCP();
+  showToast('完了しました 🎉');
+}
+
+$('btnEditComplete').addEventListener('click', () => {
+  if (editId == null) return;
+  editBg.classList.remove('open');
+  completeTask(editId);
+});
+
+/* ===== I-4: タスク削除物語 ===== */
+function deleteTask(id) {
+  const idx = tasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  showConfirm('タスク削除', `「${tasks[idx].name}」を削除しますか？`, [
+    { label: 'DELETE', cls: 'btn-delete', fn: () => {
+      closeConfirm();
+      tasks.splice(idx, 1);
+      save();
+      render();
+      showToast('削除しました');
+    }},
+    { label: 'CANCEL', cls: 'btn-cancel', fn: closeConfirm }
+  ]);
+}
+
+$('btnEditDelete').addEventListener('click', () => {
+  if (editId == null) return;
+  editBg.classList.remove('open');
+  deleteTask(editId);
+});
+
+/* ===== I-5: タスク並び替え物語 ===== */
+// PC ドラッグ&ドロップ
+function onDragStart(e, idx) {
+  dragSrcIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.target.closest('.task-row').classList.add('dragging');
+}
+function onDragOver(e) { e.preventDefault(); }
+function onDragEnter(e) {
+  const row = e.target.closest('.task-row');
+  if (row) row.classList.add('drag-over');
+}
+function onDragLeave(e) {
+  const row = e.target.closest('.task-row');
+  if (row) row.classList.remove('drag-over');
+}
+function onDrop(e, targetIdx) {
+  e.preventDefault();
+  document.querySelectorAll('.task-row').forEach(r => r.classList.remove('drag-over','dragging'));
+  if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+  if (targetIdx < 0 || targetIdx >= tasks.length) return;
+  const moved = tasks.splice(dragSrcIdx, 1)[0];
+  tasks.splice(targetIdx, 0, moved);
+  dragSrcIdx = null;
+  save();
+  render();
+}
+
+// スマホ タッチドラッグ
+let touchDragIdx = null;
+let touchClone = null;
+let touchOverIdx = null;
+
+function onTouchDragStart(e, idx) {
+  e.preventDefault();
+  touchDragIdx = idx;
+  const row = e.target.closest('.task-row');
+  row.classList.add('touch-dragging');
+  touchClone = row.cloneNode(true);
+  touchClone.style.position = 'fixed';
+  touchClone.style.pointerEvents = 'none';
+  touchClone.style.opacity = '0.7';
+  touchClone.style.zIndex = '1000';
+  touchClone.style.width = row.offsetWidth + 'px';
+  document.body.appendChild(touchClone);
+  const touch = e.touches[0];
+  touchClone.style.left = '0px';
+  touchClone.style.top = touch.clientY - 26 + 'px';
+}
+
+function onTouchDragMove(e) {
+  if (touchDragIdx === null) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  if (touchClone) touchClone.style.top = touch.clientY - 26 + 'px';
+  // ホバー対象の特定
+  document.querySelectorAll('.task-row').forEach(r => r.classList.remove('touch-drag-over'));
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (el) {
+    const row = el.closest('.task-row');
+    if (row && row.dataset.idx !== undefined) {
+      row.classList.add('touch-drag-over');
+      touchOverIdx = parseInt(row.dataset.idx);
+    }
+  }
+}
+
+function onTouchDragEnd(e) {
+  if (touchDragIdx === null) return;
+  document.querySelectorAll('.task-row').forEach(r => r.classList.remove('touch-dragging','touch-drag-over'));
+  if (touchClone) { touchClone.remove(); touchClone = null; }
+  if (touchOverIdx !== null && touchDragIdx !== touchOverIdx) {
+    if (touchOverIdx >= 0 && touchOverIdx < tasks.length) {
+      const moved = tasks.splice(touchDragIdx, 1)[0];
+      tasks.splice(touchOverIdx, 0, moved);
+      save();
+      render();
+    }
+  }
+  touchDragIdx = null;
+  touchOverIdx = null;
+}
+
+document.addEventListener('touchmove', onTouchDragMove, { passive: false });
+document.addEventListener('touchend', onTouchDragEnd);
+
+/* ===== I-6: カレンダードット操作物語 ===== */
+function toggleDot(ti, dateStr) {
+  if (ti < 0 || ti >= tasks.length) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+  if (!Array.isArray(tasks[ti].days)) tasks[ti].days = [];
+  const di = tasks[ti].days.indexOf(dateStr);
+  if (di >= 0) {
+    tasks[ti].days.splice(di, 1);
+  } else {
+    tasks[ti].days.push(dateStr);
+  }
+  save();
+  renderCal();
+}
+
+/* ===== I-7: 完了タスク復元物語 ===== */
+function restoreTop(ci) {
+  if (ci < 0 || ci >= done.length) return;
+  const t = done.splice(ci, 1)[0];
+  delete t.completedAt;
+  tasks.unshift(t);
+  save();
+  render();
+  renderCP();
+  showToast('先頭に戻しました');
+}
+
+function restorePos(ci) {
+  if (ci < 0 || ci >= done.length) return;
+  const t = done.splice(ci, 1)[0];
+  delete t.completedAt;
+  const pos = (typeof t.origIdx === 'number' && t.origIdx <= tasks.length) ? t.origIdx : tasks.length;
+  tasks.splice(pos, 0, t);
+  save();
+  render();
+  renderCP();
+  showToast('元の位置に戻しました');
+}
+
+/* ===== I-8: 完了タスク削除物語 ===== */
+function deleteDone(ci) {
+  if (ci < 0 || ci >= done.length) return;
+  showConfirm('完了タスク削除', `「${done[ci].name}」を完全に削除しますか？`, [
+    { label: 'DELETE', cls: 'btn-delete', fn: () => {
+      closeConfirm();
+      done.splice(ci, 1);
+      save();
+      renderCP();
+      showToast('削除しました');
+    }},
+    { label: 'CANCEL', cls: 'btn-cancel', fn: closeConfirm }
+  ]);
+}
+
+/* ===== 確認ダイアログ ===== */
+function showConfirm(title, msg, buttons) {
+  $('confTitle').textContent = title;
+  $('confMsg').textContent = msg;
+  const acts = $('confActs');
+  acts.innerHTML = '';
+  buttons.forEach(b => {
+    const btn = document.createElement('button');
+    btn.textContent = b.label;
+    btn.className = b.cls;
+    btn.style.flex = '1';
+    btn.addEventListener('click', b.fn);
+    acts.appendChild(btn);
+  });
+  confBg.classList.add('open');
+}
+
+function closeConfirm() {
+  confBg.classList.remove('open');
+}
+
+/* ===== 完了パネル (O-3) ===== */
+$('btnDone').addEventListener('click', () => {
+  cpPanel.classList.toggle('open');
+  if (cpPanel.classList.contains('open')) renderCP();
+});
+$('cpClose').addEventListener('click', () => cpPanel.classList.remove('open'));
+
+function renderCP() {
+  if (!done.length) {
+    cpList.innerHTML = '<div class="empty-msg">完了タスクなし</div>';
+    return;
+  }
+  cpList.innerHTML = done.map((t, i) => `
+    <div class="cp-item">
+      <div class="cp-item-body">
+        <div class="cp-item-name">${esc(t.name)}</div>
+        <div class="cp-item-date">${t.completedAt ? fmtDate(t.completedAt) : ''}</div>
+      </div>
+      <div class="cp-btns">
+        <button class="cp-btn top" onclick="restoreTop(${i})">↑先頭</button>
+        <button class="cp-btn pos" onclick="restorePos(${i})">↩元位置</button>
+        <button class="cp-btn xdel" onclick="deleteDone(${i})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ===== O-1: タスクリスト表示物語 ===== */
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderTasks() {
+  taskCount.textContent = tasks.length + '件';
+  if (!tasks.length) {
+    taskList.innerHTML = '<div class="empty-msg">タスクを追加してください</div>';
+    return;
+  }
+  taskList.innerHTML = tasks.map((t, i) => {
+    const cc = t.color && t.color !== 'none' ? `color-${t.color}` : '';
+    const sc = t.color && t.color !== 'none' ? `strip-${t.color}` : 'strip-none';
+    const actionHtml = t.action && t.action.trim()
+      ? `<span class="task-sub">▶${esc(t.action)}</span>`
+      : `<span class="task-sub" style="font-style:italic;color:var(--text-dim);">未設定</span>`;
+    return `<div class="task-row ${cc}" data-idx="${i}" data-id="${t.id}"
+      draggable="true"
+      ondragstart="onDragStart(event,${i})"
+      ondragover="onDragOver(event)"
+      ondragenter="onDragEnter(event)"
+      ondragleave="onDragLeave(event)"
+      ondrop="onDrop(event,${i})">
+      <div class="drag-handle" ontouchstart="onTouchDragStart(event,${i})">⠿</div>
+      <div class="color-strip ${sc}"></div>
+      <div class="task-body">
+        <span class="task-num">#${i + 1}</span>
+        <span class="task-name">${esc(t.name)}</span>
+        ${actionHtml}
+      </div>
+      <div class="task-btns">
+        <button class="tbtn done" onclick="completeTask(${t.id})" title="完了">✓</button>
+        <button class="tbtn" onclick="openEdit(${t.id})" title="編集">✎</button>
+        <button class="tbtn del" onclick="deleteTask(${t.id})" title="削除">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ===== O-2: カレンダー表示物語 ===== */
+function renderCal() {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const start = new Date(today);
+  start.setDate(start.getDate() + calOff);
+
+  const dates = [];
+  for (let i = 0; i < CAL_DAYS; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    dates.push(d);
+  }
+
+  // カレンダー範囲表示
+  const s = dates[0], e = dates[dates.length - 1];
+  calRange.textContent = `${s.getMonth()+1}/${s.getDate()} - ${e.getMonth()+1}/${e.getDate()}`;
+
+  // ヘッダー
+  const wdays = ['日','月','火','水','木','金','土'];
+  dateHead.innerHTML = dates.map(d => {
+    const dStr = ds(d);
+    const isToday = ds(d) === ds(today);
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const isHoliday = JP_HOLIDAYS.has(dStr);
+    let cls = 'cal-day-cell';
+    if (isToday) cls += ' today-col';
+    else if (isHoliday) cls += ' holiday';
+    else if (isWeekend) cls += ' weekend';
+
+    // 月初 or 表示開始日に月ラベル
+    const showMonth = d.getDate() === 1 || d === dates[0];
+    const label = showMonth
+      ? `<span class="mo">${d.getMonth()+1}月</span>`
+      : `<span class="dn">${d.getDate()}</span>`;
+
+    return `<div class="${cls}">${label}<span style="font-size:8px;">${wdays[d.getDay()]}</span></div>`;
+  }).join('');
+
+  // ボディ
+  calInner.innerHTML = tasks.map((t, ti) => {
+    const cc = t.color && t.color !== 'none' ? `color-${t.color}` : '';
+    return `<div class="cal-task-row ${cc}">${dates.map(d => {
+      const dStr = ds(d);
+      const isToday = dStr === ds(today);
+      const isHoliday = JP_HOLIDAYS.has(dStr);
+      let cellCls = 'cal-cell';
+      if (isToday) cellCls += ' today-col';
+      if (isHoliday) cellCls += ' holiday-col';
+      const hasDot = Array.isArray(t.days) && t.days.includes(dStr);
+      const isDeadline = t.deadline === dStr;
+      const dotColor = t.color && t.color !== 'none' ? `dot-${t.color}` : 'dot-none';
+      let inner = '';
+      if (hasDot) inner += `<div class="dot ${dotColor}"></div>`;
+      if (isDeadline) inner += `<div class="deadline-tri"></div>`;
+      return `<div class="${cellCls}" onclick="toggleDot(${ti},'${dStr}')">${inner}</div>`;
+    }).join('')}</div>`;
+  }).join('');
+
+  // 横スクロール連動
+  syncScroll();
+
+  // 今日列へスクロール
+  if (calOff === 0) {
+    const todayIdx = dates.findIndex(d => ds(d) === ds(today));
+    if (todayIdx >= 0) {
+      const cellW = window.innerWidth <= 600 ? 36 : 44;
+      calScroll.scrollLeft = Math.max(0, todayIdx * cellW - 100);
+    }
+  }
+}
+
+function syncScroll() {
+  const dhWrapper = document.querySelector('.date-head-wrapper');
+  calScroll.addEventListener('scroll', () => {
+    dhWrapper.scrollLeft = calScroll.scrollLeft;
+  });
+}
+
+/* ===== カレンダーナビゲーション ===== */
+$('calPrev').addEventListener('click', () => { calOff -= 7; renderCal(); });
+$('calNext').addEventListener('click', () => { calOff += 7; renderCal(); });
+$('calToday').addEventListener('click', () => { calOff = 0; renderCal(); });
+
+/* ===== 全体レンダリング ===== */
+function render() {
+  renderTasks();
+  renderCal();
+}
+
+/* ===== ヘッダー設定リセット ===== */
+// ヘッダーロゴダブルクリックで設定画面表示（開発用）
+document.querySelector('.logo').addEventListener('dblclick', () => {
+  setupScreen.classList.remove('hidden');
+  $('setupReset').style.display = '';
+  const cfg = loadConfig();
+  if (cfg) {
+    $('cfgApiKey').value = cfg.apiKey || '';
+    $('cfgDbUrl').value = cfg.databaseURL || '';
+    $('cfgProjectId').value = cfg.projectId || '';
+    $('cfgAppId').value = cfg.appId || '';
+  }
+});
+
+/* ===== 起動 ===== */
+initSetup();
+</script>
+</body>
+</html>
