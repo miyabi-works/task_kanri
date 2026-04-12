@@ -227,7 +227,7 @@ function loadConfig() {
 
 function validateConfig(cfg) {
   if (!cfg) return false;
-  if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId) return false;
+  if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) return false;
   if (!cfg.databaseURL.startsWith('https://')) return false;
   return true;
 }
@@ -256,7 +256,7 @@ function initSetup() {
 ['cfgApiKey','cfgDbUrl','cfgProjectId','cfgAppId'].forEach(id => {
   $(id).addEventListener('input', () => {
     const ok = $('cfgApiKey').value.trim() && $('cfgDbUrl').value.trim()
-      && $('cfgProjectId').value.trim() && $('cfgAppId').value.trim()
+      && $('cfgProjectId').value.trim()
       && $('cfgDbUrl').value.trim().startsWith('https://');
     $('btnTest').disabled = !ok;
     $('btnSaveConfig').disabled = true;
@@ -285,8 +285,11 @@ $('btnTest').addEventListener('click', async () => {
     if (firebase.apps.length) await firebase.app().delete();
     const app = firebase.initializeApp(cfg);
     const testDb = firebase.database(app);
-    // 接続テスト: grid/ にアクセス
-    await testDb.ref('grid').once('value');
+    // 接続テスト: grid/ にアクセス（10秒タイムアウト）
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('接続がタイムアウトしました（10秒）')), 10000)
+    );
+    await Promise.race([testDb.ref('grid').once('value'), timeout]);
     $('setupStatus').className = 'setup-status success';
     $('setupStatus').textContent = '接続成功';
     $('btnSaveConfig').disabled = false;
@@ -294,6 +297,8 @@ $('btnTest').addEventListener('click', async () => {
     $('setupStatus').className = 'setup-status error';
     $('setupStatus').textContent = 'エラー: ' + e.message;
     $('btnSaveConfig').disabled = true;
+    // テスト失敗時はappをクリーンアップ
+    try { if (firebase.apps.length) await firebase.app().delete(); } catch(_){}
   } finally {
     $('btnTest').disabled = false;
   }
