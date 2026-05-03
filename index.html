@@ -37,6 +37,10 @@
       <label>APP ID</label>
       <input id="cfgAppId" class="fi" type="text" placeholder="1:123456:web:abcdef">
     </div>
+    <div class="fl">
+      <label>AUTH DOMAIN <span style="color:var(--red)">*</span></label>
+      <input id="cfgAuthDomain" class="fi" type="text" placeholder="your-project.firebaseapp.com">
+    </div>
     <div class="setup-acts">
       <button id="btnTest" class="btn-test" disabled>TEST CONNECTION</button>
       <button id="btnSaveConfig" class="btn-save-config" disabled>SAVE</button>
@@ -45,13 +49,25 @@
   </div>
 </div>
 
+<!-- ===== ログイン画面 (O-4) ===== -->
+<div id="loginScreen" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:200; justify-content:center; align-items:center; flex-direction:column; gap:24px;">
+  <div class="setup-title">GRID</div>
+  <div class="setup-subtitle">SIGN IN TO CONTINUE</div>
+  <div id="loginError" style="display:none; color:var(--red); font-size:13px; text-align:center;"></div>
+  <button id="btnGoogleLogin" style="display:flex; align-items:center; gap:10px; padding:12px 28px; font-size:14px; font-family:inherit; background:#fff; border:1px solid #ddd; border-radius:4px; cursor:pointer; letter-spacing:0.05em;">
+    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.2 3 29.4 1 24 1 14.8 1 6.9 6.5 3.3 14.3l7 5.4C12.1 13.5 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.9 7.2l7.5 5.8c4.4-4.1 7.2-10.1 7.2-17z"/><path fill="#FBBC05" d="M10.3 28.3A14.5 14.5 0 0 1 9.5 24c0-1.5.2-2.9.6-4.3l-7-5.4A23 23 0 0 0 1 24c0 3.7.9 7.2 2.4 10.3l6.9-6z"/><path fill="#34A853" d="M24 47c5.4 0 9.9-1.8 13.2-4.8l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.4 0-11.8-4.3-13.8-10.1l-6.9 6C6.8 41.5 14.8 47 24 47z"/></svg>
+    Googleでログイン
+  </button>
+</div>
+
 <!-- ===== メイン画面 ===== -->
 <div id="mainApp" style="display:none; height:100%; display:none; flex-direction:column;">
 
 <!-- ヘッダー -->
 <header>
-  <div class="logo">GRID <span>v1.3</span></div>
+  <div class="logo">GRID <span>v1.6</span></div>
   <button id="btnDone" class="hbtn">DONE</button>
+  <button id="btnLogout" class="hbtn" style="margin-left:8px; font-size:11px;">LOGOUT</button>
 </header>
 
 <!-- タスク追加バー -->
@@ -152,6 +168,7 @@
 <!-- ===== Firebase SDK ===== -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
 <script>
 /* ===== 定数 ===== */
@@ -178,6 +195,8 @@ const JP_HOLIDAYS = (() => {
 let tasks = [];
 let done = [];
 let db = null;
+let auth = null;
+let currentUser = null;
 let calOff = 0;
 let editId = null;
 let editCol = 'none';
@@ -186,6 +205,7 @@ let dragSrcIdx = null;
 /* ===== DOM参照 ===== */
 const $ = id => document.getElementById(id);
 const setupScreen = $('setupScreen');
+const loginScreen = $('loginScreen');
 const mainApp = $('mainApp');
 const quickInput = $('quickInput');
 const taskList = $('taskList');
@@ -229,14 +249,15 @@ function validateConfig(cfg) {
   if (!cfg) return false;
   if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) return false;
   if (!cfg.databaseURL.startsWith('https://')) return false;
+  if (!cfg.authDomain) return false;  // v1.6追加
   return true;
 }
 
 function initSetup() {
   const cfg = loadConfig();
   if (cfg && validateConfig(cfg)) {
-    // 設定あり・照合②適合 → メイン画面表示
-    initFirebase(cfg);
+    // 設定あり・照合②適合 → P-2起動（v1.6変更）
+    startAuthFlow(cfg);
     return;
   }
   // 設定なし → 設定画面表示
@@ -248,16 +269,18 @@ function initSetup() {
     $('cfgDbUrl').value = cfg.databaseURL || '';
     $('cfgProjectId').value = cfg.projectId || '';
     $('cfgAppId').value = cfg.appId || '';
+    $('cfgAuthDomain').value = cfg.authDomain || '';
     $('setupReset').style.display = '';
   }
 }
 
-// 入力変更時にテストボタン活性制御
-['cfgApiKey','cfgDbUrl','cfgProjectId','cfgAppId'].forEach(id => {
+// 入力変更時にテストボタン活性制御（v1.6: cfgAuthDomain追加）
+['cfgApiKey','cfgDbUrl','cfgProjectId','cfgAppId','cfgAuthDomain'].forEach(id => {
   $(id).addEventListener('input', () => {
     const ok = $('cfgApiKey').value.trim() && $('cfgDbUrl').value.trim()
       && $('cfgProjectId').value.trim()
-      && $('cfgDbUrl').value.trim().startsWith('https://');
+      && $('cfgDbUrl').value.trim().startsWith('https://')
+      && $('cfgAuthDomain').value.trim();
     $('btnTest').disabled = !ok;
     $('btnSaveConfig').disabled = true;
     $('setupStatus').className = 'setup-status';
@@ -271,7 +294,8 @@ $('btnTest').addEventListener('click', async () => {
     apiKey: $('cfgApiKey').value.trim(),
     databaseURL: $('cfgDbUrl').value.trim(),
     projectId: $('cfgProjectId').value.trim(),
-    appId: $('cfgAppId').value.trim()
+    appId: $('cfgAppId').value.trim(),
+    authDomain: $('cfgAuthDomain').value.trim()  // v1.6追加
   };
   if (!validateConfig(cfg)) return;
 
@@ -289,7 +313,7 @@ $('btnTest').addEventListener('click', async () => {
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('接続がタイムアウトしました（10秒）')), 10000)
     );
-    await Promise.race([testDb.ref('grid').once('value'), timeout]);
+    await Promise.race([testDb.ref('.info/connected').once('value'), timeout]);
     $('setupStatus').className = 'setup-status success';
     $('setupStatus').textContent = '接続成功';
     $('btnSaveConfig').disabled = false;
@@ -304,16 +328,17 @@ $('btnTest').addEventListener('click', async () => {
   }
 });
 
-// 保存
+// 保存（v1.6: authDomain追加・startAuthFlow起動へ変更）
 $('btnSaveConfig').addEventListener('click', () => {
   const cfg = {
     apiKey: $('cfgApiKey').value.trim(),
     databaseURL: $('cfgDbUrl').value.trim(),
     projectId: $('cfgProjectId').value.trim(),
-    appId: $('cfgAppId').value.trim()
+    appId: $('cfgAppId').value.trim(),
+    authDomain: $('cfgAuthDomain').value.trim()
   };
   localStorage.setItem(LS_KEY, JSON.stringify(cfg));
-  initFirebase(cfg);
+  startAuthFlow(cfg);
 });
 
 // リセット
@@ -323,6 +348,7 @@ $('setupReset').addEventListener('click', () => {
   $('cfgDbUrl').value = '';
   $('cfgProjectId').value = '';
   $('cfgAppId').value = '';
+  $('cfgAuthDomain').value = '';
   $('btnTest').disabled = true;
   $('btnSaveConfig').disabled = true;
   $('setupStatus').className = 'setup-status';
@@ -330,39 +356,31 @@ $('setupReset').addEventListener('click', () => {
   $('setupReset').style.display = 'none';
 });
 
-/* ===== P-1: Firebase同期物語 ===== */
-function initFirebase(cfg) {
+/* ===== P-2: 認証フロー管理物語 (v1.6新規) ===== */
+function startAuthFlow(cfg) {
   try {
-    if (firebase.apps.length) {
-      // 既に初期化済みならそのまま使う
-    } else {
-      firebase.initializeApp(cfg);
-    }
-    db = firebase.database();
-
-    // リアルタイム監視
-    db.ref('grid/tasks').on('value', snap => {
-      const val = snap.val();
-      tasks = Array.isArray(val) ? val : [];
-      // days配列・origIdx保証（Firebaseはnullを保存しないため）
-      tasks.forEach(t => {
-        if (!Array.isArray(t.days)) t.days = [];
-        if (t.origIdx === undefined || t.origIdx === null) t.origIdx = -1;
-      });
-      render();
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    // I-10: 認証初期化
+    auth = firebase.auth();
+    // I-12: 認証ガード（onAuthStateChangedで状態監視）
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      if (user) {
+        // 認証済み → P-1起動・メイン画面へ
+        loginScreen.style.display = 'none';
+        startDB();
+        setupScreen.classList.add('hidden');
+        mainApp.style.display = 'flex';
+        $('setupReset').style.display = '';
+      } else {
+        // 未認証 → O-4表示・I-11呼び出し
+        mainApp.style.display = 'none';
+        setupScreen.classList.add('hidden');
+        loginScreen.style.display = 'flex';
+      }
     });
-    db.ref('grid/done').on('value', snap => {
-      const val = snap.val();
-      done = Array.isArray(val) ? val : [];
-      if (cpPanel.classList.contains('open')) renderCP();
-    });
-
-    // メイン画面表示
-    setupScreen.classList.add('hidden');
-    mainApp.style.display = 'flex';
-    $('setupReset').style.display = '';
   } catch (e) {
-    console.error('Firebase init error:', e);
+    console.error('Auth flow error:', e);
     setupScreen.classList.remove('hidden');
     mainApp.style.display = 'none';
     $('setupStatus').className = 'setup-status error';
@@ -371,10 +389,57 @@ function initFirebase(cfg) {
   }
 }
 
+/* ===== I-11: Googleログイン物語 (v1.6新規) ===== */
+function googleLogin() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(e => {
+    const err = $('loginError');
+    err.textContent = 'ログインに失敗しました: ' + e.message;
+    err.style.display = 'block';
+  });
+}
+
+/* ===== I-13: ログアウト物語 (v1.6新規) ===== */
+function logout() {
+  showConfirm('ログアウト', 'ログアウトしますか？', [
+    { label: 'ログアウト', cls: 'btn-delete', fn: () => {
+      closeConfirm();
+      auth.signOut().catch(e => {
+        showToast('ログアウトに失敗しました');
+        console.error(e);
+      });
+    }},
+    { label: 'キャンセル', cls: 'btn-cancel', fn: closeConfirm }
+  ]);
+}
+
+/* ===== P-1: Firebase同期物語 ===== */
+function startDB() {
+  if (db) return;  // 二重起動防止
+  db = firebase.database();
+  syncScroll();  // v1.7: 起動時に一度だけ登録
+  db.ref('grid/tasks').on('value', snap => {
+    const val = snap.val();
+    tasks = Array.isArray(val) ? val : [];
+    tasks.forEach(t => {
+      if (!Array.isArray(t.days)) t.days = [];
+      if (t.origIdx === undefined || t.origIdx === null) t.origIdx = -1;
+    });
+    render();
+  });
+  db.ref('grid/done').on('value', snap => {
+    const val = snap.val();
+    done = Array.isArray(val) ? val : [];
+    if (cpPanel.classList.contains('open')) renderCP();
+  });
+}
+
 function save() {
-  if (!db) return;
-  db.ref('grid/tasks').set(tasks);
-  db.ref('grid/done').set(done);
+  if (!db || !currentUser) return;  // v1.6: 認証済みチェック追加
+  Promise.all([
+    db.ref('grid/tasks').set(tasks),
+    db.ref('grid/done').set(done)
+  ]).catch(e => showToast('保存に失敗しました'));  // v1.7: コンソール出力→トースト表示
 }
 
 /* ===== I-1: タスク追加物語 ===== */
@@ -797,9 +862,6 @@ function renderCal() {
     }).join('')}</div>`;
   }).join('');
 
-  // 横スクロール連動
-  syncScroll();
-
   // 今日列へスクロール
   if (calOff === 0) {
     const todayIdx = dates.findIndex(d => ds(d) === ds(today));
@@ -812,8 +874,24 @@ function renderCal() {
 
 function syncScroll() {
   const dhWrapper = document.querySelector('.date-head-wrapper');
+  let syncing = false;
+  // 横スクロール連動（カレンダー本体 ↔ ヘッダー）
   calScroll.addEventListener('scroll', () => {
     dhWrapper.scrollLeft = calScroll.scrollLeft;
+    // 縦スクロール連動（v1.8追加：カレンダー → タスクリスト）
+    if (!syncing) {
+      syncing = true;
+      taskList.scrollTop = calScroll.scrollTop;
+      syncing = false;
+    }
+  });
+  // 縦スクロール連動（v1.8追加：タスクリスト → カレンダー）
+  taskList.addEventListener('scroll', () => {
+    if (!syncing) {
+      syncing = true;
+      calScroll.scrollTop = taskList.scrollTop;
+      syncing = false;
+    }
   });
 }
 
@@ -828,6 +906,10 @@ function render() {
   renderCal();
 }
 
+/* ===== I-13: ログアウトボタン / I-11: Googleログインボタン ===== */
+$('btnLogout').addEventListener('click', logout);
+$('btnGoogleLogin').addEventListener('click', googleLogin);
+
 /* ===== ヘッダー設定リセット ===== */
 // ヘッダーロゴダブルクリックで設定画面表示（開発用）
 document.querySelector('.logo').addEventListener('dblclick', () => {
@@ -839,6 +921,7 @@ document.querySelector('.logo').addEventListener('dblclick', () => {
     $('cfgDbUrl').value = cfg.databaseURL || '';
     $('cfgProjectId').value = cfg.projectId || '';
     $('cfgAppId').value = cfg.appId || '';
+    $('cfgAuthDomain').value = cfg.authDomain || '';
   }
 });
 
