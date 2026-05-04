@@ -662,6 +662,8 @@ document.addEventListener('touchmove', onTouchDragMove, { passive: false });
 document.addEventListener('touchend', onTouchDragEnd);
 
 /* ===== I-6: カレンダードット操作物語 ===== */
+let dotDragSrc = null;
+
 function toggleDot(ti, dateStr) {
   if (ti < 0 || ti >= tasks.length) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
@@ -672,6 +674,32 @@ function toggleDot(ti, dateStr) {
   } else {
     tasks[ti].days.push(dateStr);
   }
+  save();
+  renderCal();
+}
+
+function dotDragStart(ti, dateStr, e) {
+  dotDragSrc = { ti, ds: dateStr };
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function dotDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function dotDrop(ti, dateStr, e) {
+  e.preventDefault();
+  if (!dotDragSrc) return;
+  if (dotDragSrc.ti !== ti || dotDragSrc.ds === dateStr) {
+    dotDragSrc = null;
+    return;
+  }
+  if (!Array.isArray(tasks[ti].days)) tasks[ti].days = [];
+  const fromIdx = tasks[ti].days.indexOf(dotDragSrc.ds);
+  if (fromIdx !== -1) tasks[ti].days.splice(fromIdx, 1);
+  if (!tasks[ti].days.includes(dateStr)) tasks[ti].days.push(dateStr);
+  dotDragSrc = null;
   save();
   renderCal();
 }
@@ -860,7 +888,8 @@ function renderCal() {
       let inner = '';
       if (hasDot) inner += `<div class="dot ${dotColor}"></div>`;
       if (isDeadline) inner += `<div class="deadline-tri"></div>`;
-      return `<div class="${cellCls}" onclick="toggleDot(${ti},'${dStr}')">${inner}</div>`;
+      const dragAttrs = hasDot ? `draggable="true" ondragstart="dotDragStart(${ti},'${dStr}',event)"` : '';
+      return `<div class="${cellCls}" ${dragAttrs} onclick="toggleDot(${ti},'${dStr}')" ondragover="dotDragOver(event)" ondrop="dotDrop(${ti},'${dStr}',event)">${inner}</div>`;
     }).join('')}</div>`;
   }).join('');
 
