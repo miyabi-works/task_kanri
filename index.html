@@ -17,29 +17,29 @@
     <div class="setup-title">GRID</div>
     <div class="setup-subtitle">FIREBASE CONFIGURATION</div>
     <div class="setup-hint">
-      Firebase Realtime Database の接続情報を入力してください。<br>
-      Firebase Console → プロジェクト設定 → マイアプリ から取得できます。
+      Firebaseコンソール → プロジェクトの設定 → マイアプリ → SDKの設定と構成<br>
+      からコピーした順番で入力してください。
     </div>
     <div id="setupStatus" class="setup-status"></div>
     <div class="fl">
-      <label>API KEY</label>
+      <label>① API KEY</label>
       <input id="cfgApiKey" class="fi" type="text" placeholder="AIzaSy...">
     </div>
     <div class="fl">
-      <label>DATABASE URL</label>
+      <label>② AUTH DOMAIN <span style="color:var(--red)">*</span></label>
+      <input id="cfgAuthDomain" class="fi" type="text" placeholder="your-project.firebaseapp.com">
+    </div>
+    <div class="fl">
+      <label>③ DATABASE URL</label>
       <input id="cfgDbUrl" class="fi" type="text" placeholder="https://your-project.firebaseio.com">
     </div>
     <div class="fl">
-      <label>PROJECT ID</label>
+      <label>④ PROJECT ID</label>
       <input id="cfgProjectId" class="fi" type="text" placeholder="your-project-id">
     </div>
     <div class="fl">
-      <label>APP ID</label>
+      <label>⑤ APP ID</label>
       <input id="cfgAppId" class="fi" type="text" placeholder="1:123456:web:abcdef">
-    </div>
-    <div class="fl">
-      <label>AUTH DOMAIN <span style="color:var(--red)">*</span></label>
-      <input id="cfgAuthDomain" class="fi" type="text" placeholder="your-project.firebaseapp.com">
     </div>
     <div class="setup-acts">
       <button id="btnTest" class="btn-test" disabled>TEST CONNECTION</button>
@@ -221,7 +221,9 @@ const confBg = $('confBg');
 const toastEl = $('toast');
 
 /* ===== ユーティリティ ===== */
-function ds(d) { return d.toISOString().slice(0, 10); }
+function ds(d) {  // v1.9: UTC変換ではなくローカル時間で日付文字列を生成（タイムゾーン問題対応）
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function fmtDate(iso) {
   const d = new Date(iso);
   return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -275,7 +277,7 @@ function initSetup() {
 }
 
 // 入力変更時にテストボタン活性制御（v1.6: cfgAuthDomain追加）
-['cfgApiKey','cfgDbUrl','cfgProjectId','cfgAppId','cfgAuthDomain'].forEach(id => {
+['cfgApiKey','cfgAuthDomain','cfgDbUrl','cfgProjectId','cfgAppId'].forEach(id => {  // v1.9: Firebaseコンソールのコピー順
   $(id).addEventListener('input', () => {
     const ok = $('cfgApiKey').value.trim() && $('cfgDbUrl').value.trim()
       && $('cfgProjectId').value.trim()
@@ -468,7 +470,7 @@ function addTask() {
 }
 
 $('btnAdd').addEventListener('click', addTask);
-quickInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+quickInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addTask(); });  // v1.9: IME確定中は無効
 
 /* ===== I-2: タスク編集物語 ===== */
 function openEdit(id) {
