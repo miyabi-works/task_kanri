@@ -65,7 +65,7 @@
 
 <!-- ヘッダー -->
 <header>
-  <div class="logo">GRID <span>v1.12</span></div>
+  <div class="logo">GRID <span>v1.13</span></div>
   <button id="btnDone" class="hbtn">DONE</button>
   <button id="btnLogout" class="hbtn" style="margin-left:8px; font-size:11px;">LOGOUT</button>
 </header>
@@ -80,7 +80,7 @@
 <div class="nav-bar">
   <div class="nav-left">
     <span class="pane-title">TASKS</span>
-    <button id="btnSortByDay" class="sort-day-btn" disabled title="過去も含め、一番早い予定日（●）順。同じ日なら今の順番を保ち、予定日がないタスクは最後へ">予定日順</button>
+    <button id="btnSortByDay" class="sort-day-btn" disabled title="今日以降の一番近い予定日（●）順。同日は今の順番を維持。過去の予定だけなら下へ、予定日なしは最後へ">予定日順</button>
     <span id="taskCount" class="task-count">0件</span>
   </div>
   <div class="nav-right">
@@ -577,12 +577,12 @@ $('btnEditDelete').addEventListener('click', () => {
   deleteTask(editId);
 });
 
-/* ===== I-14: 予定日順並び替え物語 (v1.12) ===== */
-// リスケ対象の過去日も含め、一番早い有効な予定日で並べる。
-function earliestScheduledDay(task) {
+/* ===== I-14: 予定日順並び替え物語 (v1.13) ===== */
+// 複数の予定日も今日以降だけで比較する。過去の●自体は保持する。
+function earliestScheduledDay(task, fromDay = '') {
   if (!Array.isArray(task.days)) return '';
   return task.days.reduce((nearest, day) => {
-    if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return nearest;
+    if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day < fromDay) return nearest;
     const date = new Date(day + 'T00:00:00');
     if (Number.isNaN(date.getTime()) || ds(date) !== day) return nearest;
     return !nearest || day < nearest ? day : nearest;
@@ -591,10 +591,15 @@ function earliestScheduledDay(task) {
 
 async function sortByScheduledDay() {
   if (!db || !currentUser || sortingByDay || tasks.length < 2) return;
-  const sorted = tasks.map((task, index) => ({ task, index, day: earliestScheduledDay(task) }))
+  const today = ds(new Date());
+  const sorted = tasks.map((task, index) => {
+    const day = earliestScheduledDay(task, today);
+    // 今後の予定あり → 過去の予定だけ → 有効な予定日なし。
+    const group = day ? 0 : earliestScheduledDay(task) ? 1 : 2;
+    return { task, index, day, group };
+  })
     .sort((a, b) => {
-      if (!a.day && b.day) return 1;
-      if (a.day && !b.day) return -1;
+      if (a.group !== b.group) return a.group - b.group;
       if (a.day !== b.day) return a.day < b.day ? -1 : 1;
       return a.index - b.index;
     }).map(item => item.task);
