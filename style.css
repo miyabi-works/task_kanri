@@ -1,5 +1,5 @@
 /* ===== GRID タスク管理アプリ スタイルシート ===== */
-/* 仕様書 v1.3 対応 */
+/* 仕様書 v1.11 対応 */
 
 /* ===== CSS変数（カラーパレット・サイズ） ===== */
 :root {
@@ -43,6 +43,9 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 .nav-bar { height: 44px; background: var(--surface2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 12px; gap: 0; flex-shrink: 0; }
 .nav-left { width: var(--task-pane-w); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding-right: 12px; border-right: 2px solid var(--ink); }
 .nav-right { flex: 1; display: flex; align-items: center; gap: 8px; padding-left: 12px; }
+.sort-day-btn { padding: 5px 9px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
+.sort-day-btn:hover { background: var(--border); }
+.sort-day-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ===== タスクペイン ===== */
 .task-pane { width: var(--task-pane-w); flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface); border-right: 2px solid var(--ink); overflow: hidden; }
@@ -227,6 +230,7 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
   .cal-today-btn { padding: 3px 6px; font-size: 9px; }
   .pane-title { font-size: 9px; letter-spacing: 1px; }
   .task-count { font-size: 9px; }
+  .sort-day-btn { padding: 5px 6px; font-size: 10px; }
 
   /* メインレイアウト */
   .main-layout { height: calc(100vh - 48px - 44px - 38px - var(--date-head-h)); }
