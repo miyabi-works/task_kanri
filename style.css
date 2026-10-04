@@ -1,5 +1,5 @@
 /* ===== GRID タスク管理アプリ スタイルシート ===== */
-/* GRID v1.14 */
+/* GRID v1.15 */
 
 /* ===== CSS変数（カラーパレット・サイズ） ===== */
 :root {
@@ -165,7 +165,7 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 .conf-bg.open { display: flex; }
 .conf-box { background: var(--surface); border: 2px solid var(--ink); border-radius: 6px; padding: 22px; width: 340px; max-width: 95vw; }
 .conf-title { font-family: 'Kaisei Decol', serif; font-size: 15px; margin-bottom: 8px; }
-.conf-msg { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 18px; }
+.conf-msg { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 18px; white-space: pre-line; max-height: 50vh; overflow-y: auto; }
 .conf-acts { display: flex; gap: 8px; }
 
 /* ===== トースト ===== */

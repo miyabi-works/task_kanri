@@ -65,7 +65,7 @@
 
 <!-- ヘッダー -->
 <header>
-  <div class="logo">GRID <span>v1.14</span></div>
+  <div class="logo">GRID <span>v1.15</span></div>
   <button id="btnDone" class="hbtn">DONE</button>
   <button id="btnLogout" class="hbtn" style="margin-left:8px; font-size:11px;">LOGOUT</button>
 </header>
@@ -87,6 +87,7 @@
     <button id="calPrev" class="cal-nav-btn">◀</button>
     <button id="calToday" class="cal-today-btn">TODAY</button>
     <button id="calNext" class="cal-nav-btn">▶</button>
+    <button id="btnShiftWeek" class="sort-day-btn" disabled title="今日以降のすべての予定日（●）を7日後へ移動" aria-label="今日以降の予定を1週間後へ移動">予定＋1週</button>
     <span id="calRange" class="cal-range"></span>
   </div>
 </div>
@@ -1265,6 +1266,7 @@ let editId = null;
 let editCol = 'none';
 let dragSrcIdx = null;
 let sortingByDay = false;
+let shiftingDays = false;
 
 /* ===== DOM参照 ===== */
 const $ = id => document.getElementById(id);
@@ -1652,7 +1654,7 @@ function earliestScheduledDay(task, fromDay = '') {
 }
 
 async function sortByScheduledDay() {
-  if (!db || !currentUser || sortingByDay || tasks.length < 2) return;
+  if (!db || !currentUser || sortingByDay || shiftingDays || tasks.length < 2) return;
   const today = ds(new Date());
   const sorted = tasks.map((task, index) => {
     const day = earliestScheduledDay(task, today);
@@ -1683,10 +1685,79 @@ async function sortByScheduledDay() {
   } finally {
     sortingByDay = false;
     $('btnSortByDay').disabled = !currentUser || tasks.length < 2;
+    $('btnShiftWeek').disabled = !currentUser || !tasks.length;
   }
 }
 
 $('btnSortByDay').addEventListener('click', sortByScheduledDay);
+
+/* ===== 今日以降の予定を1週間移動 ===== */
+function planUpcomingWeekShift(list, fromDay) {
+  const changes = [];
+  const shifted = list.map(task => {
+    if (!Array.isArray(task.days)) return task;
+    const days = task.days.map(day => {
+      if (!earliestScheduledDay({ days: [day] }, fromDay)) return day;
+      const date = new Date(day + 'T12:00:00');
+      date.setDate(date.getDate() + 7);
+      const to = ds(date);
+      changes.push({ id: task.id, name: task.name, from: day, to });
+      return to;
+    });
+    return days.some((day, i) => day !== task.days[i]) ? { ...task, days } : task;
+  });
+  return { tasks: shifted, changes };
+}
+
+function upcomingShiftKey(changes) {
+  // 名前等の変更は保ちつつ、確認後に予定日や並びが変わったら再確認する。
+  return JSON.stringify(changes.map(({ id, from, to }) => [id, from, to]));
+}
+
+function confirmUpcomingWeekShift() {
+  if (!db || !currentUser || shiftingDays || sortingByDay) return;
+  const today = ds(new Date());
+  const plan = planUpcomingWeekShift(tasks, today);
+  if (!plan.changes.length) { showToast('今日以降の予定日（●）はありません'); return; }
+  const details = plan.changes.map(c => `${c.name}：${c.from} → ${c.to}`).join('\n');
+  showConfirm('予定を1週間後へ移動', `今日（${today}）以降の予定日（●）${plan.changes.length}件を7日後へ移します。\n過去の●と期限（▲）は変更しません。\n\n${details}`, [
+    { label: '7日後へ移動', cls: 'btn-ok', fn: () => {
+      closeConfirm();
+      shiftUpcomingWeek(today, upcomingShiftKey(plan.changes));
+    } },
+    { label: 'CANCEL', cls: 'btn-cancel', fn: closeConfirm }
+  ]);
+}
+
+async function shiftUpcomingWeek(today, confirmedKey) {
+  if (!db || !currentUser || shiftingDays || sortingByDay) return;
+  shiftingDays = true;
+  renderTasks();
+  try {
+    // 最新データから一括更新する。保存まで元の予定を保持し、重複を作らない。
+    const result = await db.ref('grid/tasks').transaction(current => {
+      if (!Array.isArray(current) || current.some(task => !task || typeof task !== 'object')) return;
+      const plan = planUpcomingWeekShift(current, today);
+      if (!plan.changes.length || upcomingShiftKey(plan.changes) !== confirmedKey) return;
+      return plan.tasks;
+    }, undefined, false);
+    if (!result.committed) {
+      showToast('予定が更新されています。もう一度確認してください');
+      return;
+    }
+    tasks = result.snapshot.val();
+    render();
+    const count = JSON.parse(confirmedKey).length;
+    showToast(`予定${count}件を7日後へ移動しました`);
+  } catch (e) {
+    showToast('予定の移動を保存できませんでした');
+  } finally {
+    shiftingDays = false;
+    renderTasks();
+  }
+}
+
+$('btnShiftWeek').addEventListener('click', confirmUpcomingWeekShift);
 
 /* ===== I-5: 手動並び替え ===== */
 // PC ドラッグ&ドロップ
@@ -1913,7 +1984,8 @@ function esc(s) {
 
 function renderTasks() {
   taskCount.textContent = tasks.length + '件';
-  $('btnSortByDay').disabled = !currentUser || sortingByDay || tasks.length < 2;
+  $('btnSortByDay').disabled = !currentUser || sortingByDay || shiftingDays || tasks.length < 2;
+  $('btnShiftWeek').disabled = !currentUser || shiftingDays || sortingByDay || !tasks.length;
   if (!tasks.length) {
     taskList.innerHTML = '<div class="empty-msg">タスクを追加してください</div>';
     return;
