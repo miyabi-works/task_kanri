@@ -1,5 +1,5 @@
 /* ===== GRID タスク管理アプリ スタイルシート ===== */
-/* 仕様書 v1.13 対応 */
+/* GRID v1.14 */
 
 /* ===== CSS変数（カラーパレット・サイズ） ===== */
 :root {
@@ -46,6 +46,7 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 .sort-day-btn { padding: 5px 9px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
 .sort-day-btn:hover { background: var(--border); }
 .sort-day-btn:disabled { opacity: 0.4; cursor: default; }
+.holiday-notice { flex-shrink: 0; padding: 5px 12px; font-size: 11px; color: var(--red); background: var(--red-light); border-bottom: 1px solid var(--border); }
 
 /* ===== タスクペイン ===== */
 .task-pane { width: var(--task-pane-w); flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface); border-right: 2px solid var(--ink); overflow: hidden; }
@@ -66,6 +67,7 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 .cal-day-cell.today-col { background: var(--ink); color: var(--bg); }
 .cal-day-cell.weekend { background: var(--surface2); color: #888; }
 .cal-day-cell.holiday { background: #fff0f0; color: var(--red); }
+.cal-day-cell.holiday.today-col { background: var(--ink); color: var(--bg); }
 
 /* ===== カレンダーボディ ===== */
 .cal-task-row { display: flex; border-bottom: 1px solid var(--border); height: var(--row-h); }
