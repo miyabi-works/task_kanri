@@ -65,7 +65,7 @@
 
 <!-- ヘッダー -->
 <header>
-  <div class="logo">GRID <span>v1.16</span></div>
+  <div class="logo">GRID <span>v1.17</span></div>
   <button id="btnDone" class="hbtn">DONE</button>
   <button id="btnLogout" class="hbtn" style="margin-left:8px; font-size:11px;">LOGOUT</button>
 </header>
@@ -80,7 +80,7 @@
 <div class="nav-bar">
   <div class="nav-left">
     <span class="pane-title">TASKS</span>
-    <button id="btnSortByDay" class="sort-day-btn" disabled title="今日以降の一番近い予定日（●）順。同日は今の順番を維持。過去の予定だけなら下へ、予定日なしは最後へ">予定日順</button>
+    <button id="btnSortByDay" class="sort-day-btn" disabled title="親とサブタスクを今日以降の一番近い予定日（●）順に整理。同日は今の順番を維持。過去の予定だけ、予定日なし、完了済みの子の順に下へ">予定日順</button>
     <span id="taskCount" class="task-count">0件</span>
   </div>
   <div class="nav-right">
@@ -1830,21 +1830,30 @@ function earliestScheduledDay(task, fromDay = '') {
   }, '');
 }
 
-async function sortByScheduledDay() {
-  if (!db || !currentUser || sortingByDay || shiftingDays || subtaskSaving || tasks.length < 2) return;
-  const today = ds(new Date());
-  const sorted = tasks.map((task, index) => {
-    const schedule = { days: scheduledDaysForTask(task) };
+function sortScheduleList(list, today, isChild = false) {
+  return list.map((task, index) => {
+    const schedule = isChild ? task : { days: scheduledDaysForTask(task) };
     const day = earliestScheduledDay(schedule, today);
-    // 今後の予定あり → 過去の予定だけ → 有効な予定日なし。
-    const group = day ? 0 : earliestScheduledDay(schedule) ? 1 : 2;
-    return { task, index, day, group };
+    // 今後の予定あり → 過去の予定だけ → 有効な予定日なし → 完了済みの子。
+    const group = isChild && task.completedAt ? 3 : day ? 0 : earliestScheduledDay(schedule) ? 1 : 2;
+    return { task, index, day: group === 0 ? day : '', group };
   })
     .sort((a, b) => {
       if (a.group !== b.group) return a.group - b.group;
       if (a.day !== b.day) return a.day < b.day ? -1 : 1;
       return a.index - b.index;
     }).map(item => item.task);
+}
+
+async function sortByScheduledDay() {
+  if (!db || !currentUser || sortingByDay || shiftingDays || subtaskSaving || !tasks.length) return;
+  const today = ds(new Date());
+  const sorted = sortScheduleList(tasks.map(task => {
+    const children = subtasksOf(task);
+    if (children.length < 2) return task;
+    const subtasks = sortScheduleList(children, today, true);
+    return subtasks.every((child, index) => child === children[index]) ? task : { ...task, subtasks };
+  }), today);
   if (sorted.every((task, index) => task === tasks[index])) {
     showToast('予定日順に並んでいます');
     return;
@@ -2222,7 +2231,7 @@ function parentNextLabel(task) {
 function renderTasks() {
   taskCount.textContent = tasks.length + '件';
   const busy = sortingByDay || shiftingDays || subtaskSaving;
-  $('btnSortByDay').disabled = !currentUser || busy || tasks.length < 2;
+  $('btnSortByDay').disabled = !currentUser || busy || !tasks.length;
   $('btnShiftWeek').disabled = !currentUser || busy || !tasks.length;
   if (!tasks.length) {
     taskList.innerHTML = '<div class="empty-msg">タスクを追加してください</div>';
