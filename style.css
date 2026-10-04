@@ -1,5 +1,5 @@
 /* ===== GRID タスク管理アプリ スタイルシート ===== */
-/* GRID v1.15 */
+/* GRID v1.16 */
 
 /* ===== CSS変数（カラーパレット・サイズ） ===== */
 :root {
@@ -93,6 +93,16 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 .task-row.color-blue { background: var(--blue-light); } .task-row.color-blue:hover { background: #ddeeff; }
 .task-row.color-yellow { background: var(--yellow-light); } .task-row.color-yellow:hover { background: #fdfce0; }
 .task-row.dragging { opacity: 0.3; } .task-row.drag-over { border-top: 2px solid var(--ink); }
+.task-title-line { display: flex; align-items: center; min-width: 0; gap: 3px; }
+.task-title-line .task-name { flex: 1; min-width: 0; }
+.subtask-toggle { width: 16px; height: 20px; padding: 0; flex-shrink: 0; border: 0; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.parent-next { color: var(--blue); }
+.subtask-row { padding-left: 10px; cursor: default; background: #faf9f6; }
+.subtask-check { width: 16px; height: 16px; margin: 0 6px 0 0; flex-shrink: 0; accent-color: var(--green); cursor: pointer; }
+.subtask-completed .task-name { text-decoration: line-through; color: var(--text-muted); }
+.subtask-completed .dot { opacity: 0.35; }
+.subtask-cal-row { background: #faf9f6; }
+.tbtn:disabled { opacity: 0.35; cursor: default; }
 
 /* ===== カラーストリップ ===== */
 .color-strip { width: 4px; height: 100%; min-height: var(--row-h); flex-shrink: 0; }
@@ -136,7 +146,13 @@ header { background: var(--ink); padding: 0 20px; height: 48px; display: flex; a
 /* ===== モーダル共通 ===== */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
 .modal-bg.open { display: flex; }
-.modal { background: var(--surface); border: 2px solid var(--ink); border-radius: 6px; padding: 24px; width: 460px; max-width: 95vw; }
+.modal { background: var(--surface); border: 2px solid var(--ink); border-radius: 6px; padding: 24px; width: 460px; max-width: 95vw; max-height: 90dvh; overflow-y: auto; }
+.subtask-add-row { display: flex; gap: 6px; align-items: center; }
+.subtask-add-row .fi { flex: 1; min-width: 0; }
+.subtask-add-row .btn-ok { flex: 0 0 auto; }
+.edit-subtask-list { max-height: 100px; overflow-y: auto; margin-bottom: 6px; }
+.edit-subtask-item { font-size: 11px; padding: 3px 0; overflow-wrap: anywhere; }
+.edit-subtask-item.completed { color: var(--text-muted); text-decoration: line-through; }
 .modal-title { font-family: 'Kaisei Decol', serif; font-size: 16px; margin-bottom: 18px; }
 .fl { margin-bottom: 14px; }
 .fl label { display: block; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 5px; }

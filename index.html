@@ -65,7 +65,7 @@
 
 <!-- ヘッダー -->
 <header>
-  <div class="logo">GRID <span>v1.15</span></div>
+  <div class="logo">GRID <span>v1.16</span></div>
   <button id="btnDone" class="hbtn">DONE</button>
   <button id="btnLogout" class="hbtn" style="margin-left:8px; font-size:11px;">LOGOUT</button>
 </header>
@@ -125,7 +125,7 @@
 <!-- ===== 編集モーダル (I-2) ===== -->
 <div id="editBg" class="modal-bg">
   <div class="modal">
-    <div class="modal-title">タスク編集</div>
+    <div id="editTitle" class="modal-title">タスク編集</div>
     <div class="fl">
       <label>TASK NAME</label>
       <input id="eName" class="fi" type="text">
@@ -145,6 +145,14 @@
         <div class="co c-blue" data-c="blue">集中</div>
         <div class="co c-yellow" data-c="yellow">定型</div>
         <div class="co c-none" data-c="none">なし</div>
+      </div>
+    </div>
+    <div id="eSubtaskSection" class="fl" hidden>
+      <label for="eSubtaskName">サブタスク</label>
+      <div id="eSubtaskList" class="edit-subtask-list"></div>
+      <div class="subtask-add-row">
+        <input id="eSubtaskName" class="fi" type="text" placeholder="サブタスク名を入力...">
+        <button id="btnAddSubtask" class="btn-ok" type="button">追加</button>
       </div>
     </div>
     <div class="modal-acts">
@@ -1267,6 +1275,10 @@ let editCol = 'none';
 let dragSrcIdx = null;
 let sortingByDay = false;
 let shiftingDays = false;
+let editParentId = null;
+let subtaskSaving = false;
+let lastTaskId = 0;
+const expandedTaskIds = new Set();
 
 /* ===== DOM参照 ===== */
 const $ = id => document.getElementById(id);
@@ -1512,14 +1524,14 @@ function save() {
 
 /* ===== I-1: タスク追加物語 ===== */
 function addTask() {
-  if (!db) return;
+  if (!db || subtaskSaving || shiftingDays) return;
   const name = quickInput.value.trim();
   if (!name) {
     flashError(quickInput);
     return;
   }
   const t = {
-    id: Date.now(),
+    id: nextTaskId(),
     name,
     action: '',
     deadline: '',
@@ -1539,15 +1551,22 @@ $('btnAdd').addEventListener('click', addTask);
 quickInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addTask(); });  // v1.9: IME確定中は無効
 
 /* ===== I-2: タスク編集物語 ===== */
-function openEdit(id) {
-  const idx = tasks.findIndex(t => t.id === id);
-  if (idx < 0) return;
+function openEdit(id, parentId = null) {
+  if (subtaskSaving) return;
+  const parent = parentId === null ? null : tasks.find(t => t.id === parentId);
+  const t = parent ? subtasksOf(parent).find(c => c.id === id)
+    : parentId === null ? tasks.find(t => t.id === id) : null;
+  if (!t) return;
   editId = id;
-  const t = tasks[idx];
+  editParentId = parentId;
+  $('editTitle').textContent = parent ? 'サブタスク編集' : 'タスク編集';
+  $('btnEditComplete').textContent = parent && t.completedAt ? '未完了に戻す' : 'COMPLETE';
   $('eName').value = t.name;
   $('eAction').value = t.action || '';
   $('eDeadline').value = t.deadline || '';
   editCol = t.color || 'none';
+  $('eSubtaskName').value = '';
+  renderSubtaskSection();
   updateColorSel();
   editBg.classList.add('open');
 }
@@ -1565,17 +1584,25 @@ document.querySelectorAll('.co').forEach(el => {
   });
 });
 
-function saveEdit() {
-  const idx = tasks.findIndex(t => t.id === editId);
-  if (idx < 0) { editBg.classList.remove('open'); return; }
+async function saveEdit() {
+  if (subtaskSaving) return;
   const name = $('eName').value.trim();
   if (!name) { flashError($('eName')); return; }
   const validColors = ['red','blue','yellow','none'];
   if (!validColors.includes(editCol)) return;
-  tasks[idx].name = name;
-  tasks[idx].action = $('eAction').value.trim();
-  tasks[idx].deadline = $('eDeadline').value;
-  tasks[idx].color = editCol;
+  const fields = { name, action: $('eAction').value.trim(), deadline: $('eDeadline').value, color: editCol };
+  if (editParentId !== null) {
+    const childId = editId;
+    const ok = await commitSubtaskChange(editParentId, parent => {
+      if (!subtasksOf(parent).some(c => c.id === childId)) return;
+      return { ...parent, subtasks: subtasksOf(parent).map(c => c.id === childId ? { ...c, ...fields } : c) };
+    }, 'サブタスクを保存しました');
+    if (ok) editBg.classList.remove('open');
+    return;
+  }
+  const idx = tasks.findIndex(t => t.id === editId);
+  if (idx < 0) { editBg.classList.remove('open'); return; }
+  Object.assign(tasks[idx], fields);
   editBg.classList.remove('open');
   save();
   render();
@@ -1587,9 +1614,21 @@ $('btnEditCancel').addEventListener('click', () => editBg.classList.remove('open
 
 /* ===== I-3: タスク完了物語 ===== */
 function completeTask(id) {
+  if (subtaskSaving) return;
   const idx = tasks.findIndex(t => t.id === id);
   if (idx < 0) return;
   const t = tasks[idx];
+  const children = subtasksOf(t);
+  if (children.length) {
+    const pending = children.filter(c => !c.completedAt).length;
+    if (pending) {
+      showConfirm('サブタスクが未完了です', `未完了のサブタスクが${pending}件あります。親タスクを完了しますか？`, [
+        { label: '親を完了', cls: 'btn-complete', fn: () => { closeConfirm(); doComplete(tasks.findIndex(x => x.id === id)); } },
+        { label: 'CANCEL', cls: 'btn-cancel', fn: closeConfirm }
+      ]);
+    } else doComplete(idx);
+    return;
+  }
   if (!t.action || !t.action.trim()) {
     showConfirm('Next Action未入力', 'Next Actionが未入力です。このまま完了しますか？', [
       { label: 'このまま完了', cls: 'btn-complete', fn: () => { closeConfirm(); doComplete(idx); } },
@@ -1614,16 +1653,19 @@ function doComplete(idx) {
 }
 
 $('btnEditComplete').addEventListener('click', () => {
-  if (editId == null) return;
+  if (editId == null || subtaskSaving) return;
   editBg.classList.remove('open');
-  completeTask(editId);
+  if (editParentId !== null) toggleSubtaskComplete(editParentId, editId);
+  else completeTask(editId);
 });
 
 /* ===== I-4: タスク削除物語 ===== */
 function deleteTask(id) {
+  if (subtaskSaving) return;
   const idx = tasks.findIndex(t => t.id === id);
   if (idx < 0) return;
-  showConfirm('タスク削除', `「${tasks[idx].name}」を削除しますか？`, [
+  const childNote = subtasksOf(tasks[idx]).length ? 'サブタスクも一緒に削除されます。' : '';
+  showConfirm('タスク削除', `「${tasks[idx].name}」を削除しますか？${childNote}`, [
     { label: 'DELETE', cls: 'btn-delete', fn: () => {
       closeConfirm();
       tasks.splice(idx, 1);
@@ -1636,9 +1678,144 @@ function deleteTask(id) {
 }
 
 $('btnEditDelete').addEventListener('click', () => {
-  if (editId == null) return;
+  if (editId == null || subtaskSaving) return;
   editBg.classList.remove('open');
-  deleteTask(editId);
+  if (editParentId !== null) deleteSubtask(editParentId, editId);
+  else deleteTask(editId);
+});
+
+/* ===== 親タスク・サブタスク ===== */
+function nextTaskId() {
+  lastTaskId = Math.max(Date.now(), lastTaskId + 1);
+  return lastTaskId;
+}
+
+function subtasksOf(task) {
+  return Array.isArray(task.subtasks) ? task.subtasks : [];
+}
+
+function scheduledDaysForTask(task) {
+  const children = subtasksOf(task);
+  return children.length
+    ? children.filter(c => !c.completedAt).flatMap(c => Array.isArray(c.days) ? c.days : [])
+    : task.days;
+}
+
+function nextSubtask(task, today = ds(new Date())) {
+  let next = null;
+  for (const child of subtasksOf(task)) {
+    if (child.completedAt) continue;
+    const day = earliestScheduledDay(child, today);
+    if (day && (!next || day < next.day)) next = { child, day };
+  }
+  return next;
+}
+
+function visibleTaskRows() {
+  return tasks.flatMap((task, rootIndex) => {
+    const rows = [{ task, rootIndex, childId: null }];
+    if (expandedTaskIds.has(task.id)) {
+      subtasksOf(task).forEach(child => rows.push({ task: child, rootIndex, childId: child.id }));
+    }
+    return rows;
+  });
+}
+
+function toggleSubtasks(id) {
+  if (expandedTaskIds.has(id)) expandedTaskIds.delete(id);
+  else expandedTaskIds.add(id);
+  render();
+}
+
+function renderSubtaskSection() {
+  const parent = editParentId === null ? tasks.find(t => t.id === editId) : null;
+  $('eSubtaskSection').hidden = !parent;
+  if (!parent) return;
+  $('eSubtaskList').innerHTML = subtasksOf(parent).map(c =>
+    `<div class="edit-subtask-item${c.completedAt ? ' completed' : ''}">${c.completedAt ? '✓' : '○'} ${esc(c.name)}</div>`
+  ).join('');
+  $('btnAddSubtask').disabled = subtaskSaving;
+}
+
+async function commitSubtaskChange(parentId, updateParent, message) {
+  if (!db || !currentUser || subtaskSaving || shiftingDays || sortingByDay) return false;
+  subtaskSaving = true;
+  $('btnEditSave').disabled = true;
+  renderTasks();
+  renderSubtaskSection();
+  try {
+    const result = await db.ref('grid/tasks').transaction(current => {
+      if (!Array.isArray(current)) return;
+      const index = current.findIndex(t => t && t.id === parentId);
+      if (index < 0) return;
+      const parent = updateParent(current[index]);
+      if (!parent) return;
+      return current.map((t, i) => i === index ? parent : t);
+    }, undefined, false);
+    if (!result.committed) { showToast('対象のタスクが更新されています。もう一度確認してください'); return false; }
+    tasks = result.snapshot.val();
+    render();
+    renderSubtaskSection();
+    showToast(message);
+    return true;
+  } catch (e) {
+    showToast('サブタスクの変更を保存できませんでした');
+    return false;
+  } finally {
+    subtaskSaving = false;
+    $('btnEditSave').disabled = false;
+    renderTasks();
+    renderSubtaskSection();
+  }
+}
+
+async function addSubtask() {
+  if (editParentId !== null || editId === null || subtaskSaving) return;
+  const name = $('eSubtaskName').value.trim();
+  if (!name) { flashError($('eSubtaskName')); return; }
+  const parentId = editId;
+  const child = { id: nextTaskId(), name, action: '', deadline: '', color: 'none', days: [], createdAt: new Date().toISOString() };
+  const ok = await commitSubtaskChange(parentId, parent => ({ ...parent, subtasks: [...subtasksOf(parent), child] }), 'サブタスクを追加しました');
+  if (ok) {
+    expandedTaskIds.add(parentId);
+    if (editId === parentId && editParentId === null) $('eSubtaskName').value = '';
+    render();
+  }
+}
+
+async function toggleSubtaskComplete(parentId, childId) {
+  const completedAt = new Date().toISOString();
+  await commitSubtaskChange(parentId, parent => {
+    if (!subtasksOf(parent).some(c => c.id === childId)) return;
+    return { ...parent, subtasks: subtasksOf(parent).map(c => {
+      if (c.id !== childId) return c;
+      const child = { ...c };
+      if (child.completedAt) delete child.completedAt;
+      else child.completedAt = completedAt;
+      return child;
+    }) };
+  }, 'サブタスクの完了状態を保存しました');
+}
+
+function deleteSubtask(parentId, childId) {
+  const parent = tasks.find(t => t.id === parentId);
+  const child = parent && subtasksOf(parent).find(c => c.id === childId);
+  if (!child || subtaskSaving) return;
+  showConfirm('サブタスク削除', `「${child.name}」を削除しますか？`, [
+    { label: 'DELETE', cls: 'btn-delete', fn: () => {
+      closeConfirm();
+      commitSubtaskChange(parentId, p => {
+        if (!subtasksOf(p).some(c => c.id === childId)) return;
+        return { ...p, subtasks: subtasksOf(p).filter(c => c.id !== childId) };
+      }, 'サブタスクを削除しました');
+    } },
+    { label: 'CANCEL', cls: 'btn-cancel', fn: closeConfirm }
+  ]);
+}
+
+$('btnAddSubtask').addEventListener('click', addSubtask);
+$('eSubtaskName').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addSubtask(); }
 });
 
 /* ===== I-14: 予定日順並び替え物語 (v1.13) ===== */
@@ -1654,12 +1831,13 @@ function earliestScheduledDay(task, fromDay = '') {
 }
 
 async function sortByScheduledDay() {
-  if (!db || !currentUser || sortingByDay || shiftingDays || tasks.length < 2) return;
+  if (!db || !currentUser || sortingByDay || shiftingDays || subtaskSaving || tasks.length < 2) return;
   const today = ds(new Date());
   const sorted = tasks.map((task, index) => {
-    const day = earliestScheduledDay(task, today);
+    const schedule = { days: scheduledDaysForTask(task) };
+    const day = earliestScheduledDay(schedule, today);
     // 今後の予定あり → 過去の予定だけ → 有効な予定日なし。
-    const group = day ? 0 : earliestScheduledDay(task) ? 1 : 2;
+    const group = day ? 0 : earliestScheduledDay(schedule) ? 1 : 2;
     return { task, index, day, group };
   })
     .sort((a, b) => {
@@ -1684,8 +1862,7 @@ async function sortByScheduledDay() {
     showToast('並び替えの保存に失敗しました');
   } finally {
     sortingByDay = false;
-    $('btnSortByDay').disabled = !currentUser || tasks.length < 2;
-    $('btnShiftWeek').disabled = !currentUser || !tasks.length;
+    renderTasks();
   }
 }
 
@@ -1694,28 +1871,34 @@ $('btnSortByDay').addEventListener('click', sortByScheduledDay);
 /* ===== 今日以降の予定を1週間移動 ===== */
 function planUpcomingWeekShift(list, fromDay) {
   const changes = [];
-  const shifted = list.map(task => {
+  function shiftOne(task, parent = null) {
     if (!Array.isArray(task.days)) return task;
     const days = task.days.map(day => {
       if (!earliestScheduledDay({ days: [day] }, fromDay)) return day;
       const date = new Date(day + 'T12:00:00');
       date.setDate(date.getDate() + 7);
       const to = ds(date);
-      changes.push({ id: task.id, name: task.name, from: day, to });
+      changes.push({ id: task.id, ...(parent ? { parentId: parent.id } : {}), name: parent ? `${parent.name} / ${task.name}` : task.name, from: day, to });
       return to;
     });
     return days.some((day, i) => day !== task.days[i]) ? { ...task, days } : task;
+  }
+  const shifted = list.map(task => {
+    const children = subtasksOf(task);
+    if (!children.length) return shiftOne(task);
+    const subtasks = children.map(c => c.completedAt ? c : shiftOne(c, task));
+    return subtasks.some((c, i) => c !== children[i]) ? { ...task, subtasks } : task;
   });
   return { tasks: shifted, changes };
 }
 
 function upcomingShiftKey(changes) {
   // 名前等の変更は保ちつつ、確認後に予定日や並びが変わったら再確認する。
-  return JSON.stringify(changes.map(({ id, from, to }) => [id, from, to]));
+  return JSON.stringify(changes.map(({ parentId = null, id, from, to }) => [parentId, id, from, to]));
 }
 
 function confirmUpcomingWeekShift() {
-  if (!db || !currentUser || shiftingDays || sortingByDay) return;
+  if (!db || !currentUser || shiftingDays || sortingByDay || subtaskSaving) return;
   const today = ds(new Date());
   const plan = planUpcomingWeekShift(tasks, today);
   if (!plan.changes.length) { showToast('今日以降の予定日（●）はありません'); return; }
@@ -1730,7 +1913,7 @@ function confirmUpcomingWeekShift() {
 }
 
 async function shiftUpcomingWeek(today, confirmedKey) {
-  if (!db || !currentUser || shiftingDays || sortingByDay) return;
+  if (!db || !currentUser || shiftingDays || sortingByDay || subtaskSaving) return;
   shiftingDays = true;
   renderTasks();
   try {
@@ -1762,6 +1945,7 @@ $('btnShiftWeek').addEventListener('click', confirmUpcomingWeekShift);
 /* ===== I-5: 手動並び替え ===== */
 // PC ドラッグ&ドロップ
 function onDragStart(e, idx) {
+  if (subtaskSaving || shiftingDays) { e.preventDefault(); return; }
   dragSrcIdx = idx;
   e.dataTransfer.effectAllowed = 'move';
   e.target.closest('.task-row').classList.add('dragging');
@@ -1777,6 +1961,7 @@ function onDragLeave(e) {
 }
 function onDrop(e, targetIdx) {
   e.preventDefault();
+  if (subtaskSaving || shiftingDays) return;
   document.querySelectorAll('.task-row').forEach(r => r.classList.remove('drag-over','dragging'));
   if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
   if (targetIdx < 0 || targetIdx >= tasks.length) return;
@@ -1793,6 +1978,7 @@ let touchClone = null;
 let touchOverIdx = null;
 
 function onTouchDragStart(e, idx) {
+  if (subtaskSaving || shiftingDays) return;
   e.preventDefault();
   touchDragIdx = idx;
   const row = e.target.closest('.task-row');
@@ -1848,22 +2034,48 @@ document.addEventListener('touchend', onTouchDragEnd);
 /* ===== I-6: カレンダードット操作物語 ===== */
 let dotDragSrc = null;
 
-function toggleDot(ti, dateStr) {
-  if (ti < 0 || ti >= tasks.length) return;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
-  if (!Array.isArray(tasks[ti].days)) tasks[ti].days = [];
-  const di = tasks[ti].days.indexOf(dateStr);
+function calendarTask(ti, childId = null) {
+  const parent = tasks[ti];
+  if (!parent) return null;
+  return childId === null ? parent : subtasksOf(parent).find(c => c.id === childId);
+}
+
+async function toggleDot(ti, dateStr, childId = null) {
+  if (subtaskSaving || shiftingDays || ti < 0 || ti >= tasks.length) return;
+  if (!earliestScheduledDay({ days: [dateStr] })) return;
+  const task = calendarTask(ti, childId);
+  if (!task) return;
+  if (childId === null && subtasksOf(task).length) {
+    expandedTaskIds.add(task.id);
+    render();
+    showToast('サブタスクの行で予定日を変更できます');
+    return;
+  }
+  if (childId !== null) {
+    if (task.completedAt) return;
+    await commitSubtaskChange(tasks[ti].id, parent => {
+      const child = subtasksOf(parent).find(c => c.id === childId);
+      if (!child || child.completedAt) return;
+      const days = Array.isArray(child.days) ? child.days : [];
+      const updated = days.includes(dateStr) ? days.filter(day => day !== dateStr) : [...days, dateStr];
+      return { ...parent, subtasks: subtasksOf(parent).map(c => c.id === childId ? { ...c, days: updated } : c) };
+    }, 'サブタスクの予定日を保存しました');
+    return;
+  }
+  if (!Array.isArray(task.days)) task.days = [];
+  const di = task.days.indexOf(dateStr);
   if (di >= 0) {
-    tasks[ti].days.splice(di, 1);
+    task.days.splice(di, 1);
   } else {
-    tasks[ti].days.push(dateStr);
+    task.days.push(dateStr);
   }
   save();
   renderCal();
 }
 
-function dotDragStart(ti, dateStr, e) {
-  dotDragSrc = { ti, ds: dateStr };
+function dotDragStart(ti, dateStr, e, childId = null) {
+  if (subtaskSaving || shiftingDays) { e.preventDefault(); return; }
+  dotDragSrc = { ti, childId, ds: dateStr };
   e.dataTransfer.effectAllowed = 'move';
 }
 
@@ -1872,18 +2084,32 @@ function dotDragOver(e) {
   e.dataTransfer.dropEffect = 'move';
 }
 
-function dotDrop(ti, dateStr, e) {
+async function dotDrop(ti, dateStr, e, childId = null) {
   e.preventDefault();
-  if (!dotDragSrc) return;
-  if (dotDragSrc.ti !== ti || dotDragSrc.ds === dateStr) {
+  if (!dotDragSrc || subtaskSaving || shiftingDays) return;
+  if (dotDragSrc.ti !== ti || dotDragSrc.childId !== childId || dotDragSrc.ds === dateStr) {
     dotDragSrc = null;
     return;
   }
-  if (!Array.isArray(tasks[ti].days)) tasks[ti].days = [];
-  const fromIdx = tasks[ti].days.indexOf(dotDragSrc.ds);
-  if (fromIdx !== -1) tasks[ti].days.splice(fromIdx, 1);
-  if (!tasks[ti].days.includes(dateStr)) tasks[ti].days.push(dateStr);
+  const from = dotDragSrc.ds;
   dotDragSrc = null;
+  if (childId !== null) {
+    const parent = tasks[ti];
+    if (!parent || !earliestScheduledDay({ days: [dateStr] })) return;
+    await commitSubtaskChange(parent.id, p => {
+      const child = subtasksOf(p).find(c => c.id === childId);
+      if (!child || child.completedAt || !Array.isArray(child.days) || !child.days.includes(from)) return;
+      const days = [...child.days.filter(day => day !== from && day !== dateStr), dateStr];
+      return { ...p, subtasks: subtasksOf(p).map(c => c.id === childId ? { ...c, days } : c) };
+    }, 'サブタスクの予定日を移動しました');
+    return;
+  }
+  const task = tasks[ti];
+  if (!task || subtasksOf(task).length) return;
+  if (!Array.isArray(task.days)) task.days = [];
+  const fromIdx = task.days.indexOf(from);
+  if (fromIdx !== -1) task.days.splice(fromIdx, 1);
+  if (!task.days.includes(dateStr)) task.days.push(dateStr);
   save();
   renderCal();
 }
@@ -1982,38 +2208,51 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+
+function parentNextLabel(task) {
+  const children = subtasksOf(task);
+  const pending = children.filter(c => !c.completedAt);
+  if (!pending.length) return 'サブタスクはすべて完了';
+  const next = nextSubtask(task);
+  if (next) return `次：${Number(next.day.slice(5, 7))}/${Number(next.day.slice(8))} ${next.child.name}`;
+  return earliestScheduledDay({ days: scheduledDaysForTask(task) }) ? 'リスケ待ち（過去の予定のみ）' : '予定なし';
+}
+
 function renderTasks() {
   taskCount.textContent = tasks.length + '件';
-  $('btnSortByDay').disabled = !currentUser || sortingByDay || shiftingDays || tasks.length < 2;
-  $('btnShiftWeek').disabled = !currentUser || shiftingDays || sortingByDay || !tasks.length;
+  const busy = sortingByDay || shiftingDays || subtaskSaving;
+  $('btnSortByDay').disabled = !currentUser || busy || tasks.length < 2;
+  $('btnShiftWeek').disabled = !currentUser || busy || !tasks.length;
   if (!tasks.length) {
     taskList.innerHTML = '<div class="empty-msg">タスクを追加してください</div>';
     return;
   }
-  taskList.innerHTML = tasks.map((t, i) => {
+  taskList.innerHTML = visibleTaskRows().map(({ task: t, rootIndex: i, childId }) => {
+    const isChild = childId !== null;
+    const children = isChild ? [] : subtasksOf(t);
+    const completed = isChild && !!t.completedAt;
     const cc = t.color && t.color !== 'none' ? `color-${t.color}` : '';
     const sc = t.color && t.color !== 'none' ? `strip-${t.color}` : 'strip-none';
-    const actionHtml = t.action && t.action.trim()
-      ? `<span class="task-sub">▶${esc(t.action)}</span>`
-      : `<span class="task-sub" style="font-style:italic;color:var(--text-dim);">未設定</span>`;
-    return `<div class="task-row ${cc}" data-idx="${i}" data-id="${t.id}"
-      draggable="true"
-      ondragstart="onDragStart(event,${i})"
-      ondragover="onDragOver(event)"
-      ondragenter="onDragEnter(event)"
-      ondragleave="onDragLeave(event)"
-      ondrop="onDrop(event,${i})">
-      <div class="drag-handle" ontouchstart="onTouchDragStart(event,${i})">⠿</div>
+    const summary = children.length ? parentNextLabel(t) : t.action && t.action.trim() ? `▶${t.action}` : '未設定';
+    const actionHtml = `<span class="task-sub${children.length ? ' parent-next' : ''}" title="${escAttr(summary)}">${esc(summary)}</span>`;
+    const rowAttrs = isChild ? `data-parent-id="${tasks[i].id}"`
+      : `data-idx="${i}" draggable="true" ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)" ondragenter="onDragEnter(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,${i})"`;
+    const expandButton = children.length ? `<button class="subtask-toggle" onclick="toggleSubtasks(${t.id})" aria-expanded="${expandedTaskIds.has(t.id)}" aria-label="${escAttr(t.name)}のサブタスクを${expandedTaskIds.has(t.id) ? '閉じる' : '開く'}">${expandedTaskIds.has(t.id) ? '▼' : '▶'}</button>` : '';
+    const editArgs = isChild ? `${t.id},${tasks[i].id}` : `${t.id}`;
+    const number = isChild ? completed ? '完了' : 'サブタスク' : `#${i + 1}${children.length ? ' · 完了 ' + children.filter(c => c.completedAt).length + '/' + children.length : ''}`;
+    return `<div class="task-row ${cc}${isChild ? ' subtask-row' : ''}${completed ? ' subtask-completed' : ''}" ${rowAttrs} data-id="${t.id}">
+      ${isChild ? `<input type="checkbox" class="subtask-check" ${completed ? 'checked' : ''} ${busy ? 'disabled' : ''} onchange="toggleSubtaskComplete(${tasks[i].id},${t.id})" aria-label="${escAttr(t.name)}の完了">` : `<div class="drag-handle" ontouchstart="onTouchDragStart(event,${i})">⠿</div>`}
       <div class="color-strip ${sc}"></div>
       <div class="task-body">
-        <span class="task-num">#${i + 1}</span>
-        <span class="task-name">${esc(t.name)}</span>
+        <span class="task-num">${number}</span>
+        <div class="task-title-line">${expandButton}<span class="task-name" title="${escAttr(t.name)}">${esc(t.name)}</span></div>
         ${actionHtml}
       </div>
       <div class="task-btns">
-        <button class="tbtn done" onclick="completeTask(${t.id})" title="完了">✓</button>
-        <button class="tbtn" onclick="openEdit(${t.id})" title="編集">✎</button>
-        <button class="tbtn del" onclick="deleteTask(${t.id})" title="削除">✕</button>
+        ${isChild ? '' : `<button class="tbtn done" onclick="completeTask(${t.id})" title="完了" ${busy ? 'disabled' : ''}>✓</button>`}
+        <button class="tbtn" onclick="openEdit(${editArgs})" title="${isChild ? 'サブタスク編集' : '編集'}" aria-label="${escAttr(t.name)}を編集" ${busy ? 'disabled' : ''}>✎</button>
+        ${isChild ? '' : `<button class="tbtn del" onclick="deleteTask(${t.id})" title="削除" ${busy ? 'disabled' : ''}>✕</button>`}
       </div>
     </div>`;
   }).join('');
@@ -2066,23 +2305,32 @@ function renderCal() {
   }).join('');
 
   // ボディ
-  calInner.innerHTML = tasks.map((t, ti) => {
+  calInner.innerHTML = visibleTaskRows().map(({ task: t, rootIndex: ti, childId }) => {
+    const isChild = childId !== null;
+    const rollup = !isChild && subtasksOf(t).length > 0;
+    const next = rollup ? nextSubtask(t, ds(today)) : null;
+    const days = rollup ? next ? [next.day] : [] : Array.isArray(t.days) ? t.days : [];
+    const editable = !rollup && !(isChild && t.completedAt);
     const cc = t.color && t.color !== 'none' ? `color-${t.color}` : '';
-    return `<div class="cal-task-row ${cc}">${dates.map(d => {
+    return `<div class="cal-task-row ${cc}${isChild ? ' subtask-cal-row' : ''}${isChild && t.completedAt ? ' subtask-completed' : ''}${rollup ? ' rollup-row' : ''}" data-id="${t.id}"${isChild ? ` data-parent-id="${tasks[ti].id}"` : ''}>${dates.map(d => {
       const dStr = ds(d);
       const isToday = dStr === ds(today);
       const isHoliday = JP_HOLIDAYS.has(dStr);
       let cellCls = 'cal-cell';
       if (isToday) cellCls += ' today-col';
       if (isHoliday) cellCls += ' holiday-col';
-      const hasDot = Array.isArray(t.days) && t.days.includes(dStr);
+      const hasDot = days.includes(dStr);
       const isDeadline = t.deadline === dStr;
       const dotColor = t.color && t.color !== 'none' ? `dot-${t.color}` : 'dot-none';
       let inner = '';
       if (hasDot) inner += `<div class="dot ${dotColor}"></div>`;
       if (isDeadline) inner += `<div class="deadline-tri"></div>`;
-      const dragAttrs = hasDot ? `draggable="true" ondragstart="dotDragStart(${ti},'${dStr}',event)"` : '';
-      return `<div class="${cellCls}" ${dragAttrs} onclick="toggleDot(${ti},'${dStr}')" ondragover="dotDragOver(event)" ondrop="dotDrop(${ti},'${dStr}',event)">${inner}</div>`;
+      const childArg = isChild ? `,${childId}` : '';
+      const dragAttrs = hasDot && editable ? `draggable="true" ondragstart="dotDragStart(${ti},'${dStr}',event${childArg})"` : '';
+      const click = editable || rollup ? `onclick="toggleDot(${ti},'${dStr}'${childArg})"` : '';
+      const drop = editable ? `ondragover="dotDragOver(event)" ondrop="dotDrop(${ti},'${dStr}',event${childArg})"` : '';
+      const title = rollup ? '子の予定から自動表示。開いてサブタスクの予定を変更できます。' : '';
+      return `<div class="${cellCls}" data-date="${dStr}" ${dragAttrs} ${click} ${drop}${title ? ` title="${title}"` : ''}>${inner}</div>`;
     }).join('')}</div>`;
   }).join('');
 
@@ -2126,8 +2374,14 @@ $('calToday').addEventListener('click', () => { calOff = 0; renderCal(); });
 
 /* ===== 全体レンダリング ===== */
 function render() {
+  const top = calScroll.scrollTop || taskList.scrollTop || 0;
+  const left = calScroll.scrollLeft || 0;
   renderTasks();
   renderCal();
+  taskList.scrollTop = top;
+  calScroll.scrollTop = top;
+  calScroll.scrollLeft = left;
+  document.querySelector('.date-head-wrapper').scrollLeft = left;
 }
 
 /* ===== I-13: ログアウトボタン / I-11: Googleログインボタン ===== */
